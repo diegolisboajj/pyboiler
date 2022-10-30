@@ -1,0 +1,83 @@
+version: "3.9"
+
+volumes:
+  dev_postgres_data: {}
+  dev_mailhog_data: {}
+  dev_media: {}
+
+services:
+  postgres:
+    image: postgres:14.2
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data:Z
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:6.2.5-alpine
+    ports:
+      - "6379:6379"
+  mailhog:
+    image: mailhog/mailhog:v1.0.0
+    user: root
+    command: ["-storage=maildir", "-maildir-path=/maildir"]
+    volumes:
+      - dev_mailhog_data:/maildir
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    # command: "watchmedo auto-restart --directory=./ --pattern=*.py --recursive -- celery -A config worker -l INFO --pool=solo"
+    command: "celery -A config worker -l INFO --pool=solo"
+    volumes:
+      - ./backend:/code
+      - dev_media:/media
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+      - AWS_STORAGE_BUCKET_NAME=
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    # Uncomment this line of you want to enable VSCode debugging
+    # command: "python -m debugpy --listen 0.0.0.0:9999 manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./backend:/code
+      - dev_media:/media
+    ports:
+      - "8000:8000"
+      - "9999:9999"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+      - AWS_STORAGE_BUCKET_NAME=
+      - PORT=8000
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./backend:/code/backend
+      - ./frontend:/code/frontend
